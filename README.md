@@ -1,7 +1,3 @@
-Here’s an updated and more comprehensive version of the GitHub documentation that includes both the original `TestEA.mq5`, `Bot_v_1_03.ipynb`, and the cautionary EA `Black_Box.mq5`. This will cover the features, usage, and a warning about over-development, ensuring clarity for contributors.
-
----
-
 ### mql5_ea: **Forex Trading Automation EA & Backtest**
 
 ---
