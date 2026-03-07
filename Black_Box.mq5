@@ -19,13 +19,20 @@
 CTrade trade;
 
 // Define input parameters
-input double risk_perc = 0.05;    // Risk percentage per trade
+input double risk_perc = 2.0;     // Risk percentage per trade
 input int atr_period = 14;        // ATR period for Stop Loss calculation
 input double min_lot_size = 0.01; // Minimum lot size
 input int bb_period = 20;         // Bollinger Bands period
 input double bb_deviation = 2.0;  // Bollinger Bands deviation
 input int ema_period = 20;        // EMA period
+input int magic_number = 202603;  // Magic number for EA identification
 int last_trade_candle = -3; // Initialize to a value that ensures the first trade can occur
+
+// State machine variables for pending re-entry
+bool pending_reentry = false;
+bool pending_is_buy = false;
+int pending_candles_remaining = 2;
+double pending_bb_upper, pending_bb_middle, pending_bb_lower;
 
 // Indicator handles
 int handle_bb;
@@ -51,6 +58,9 @@ int OnInit()
       Print("Error initializing indicators!");
       return INIT_FAILED;
      }
+
+   trade.SetExpertMagicNumber(magic_number);
+   trade.SetDeviationInPoints(10);
 
    Print("EA initialized successfully");
    return INIT_SUCCEEDED;
@@ -92,8 +102,8 @@ void OnTick()
     double bb_upper[], bb_middle[], bb_lower[], ema_value[];
 
     // Copy indicator values into arrays
-    if(CopyBuffer(handle_bb, 0, 0, 3, bb_upper) <= 0 ||
-       CopyBuffer(handle_bb, 1, 0, 3, bb_middle) <= 0 ||
+    if(CopyBuffer(handle_bb, 0, 0, 3, bb_middle) <= 0 ||
+       CopyBuffer(handle_bb, 1, 0, 3, bb_upper) <= 0 ||
        CopyBuffer(handle_bb, 2, 0, 3, bb_lower) <= 0 ||
        CopyBuffer(handle_ema, 0, 0, 3, ema_value) <= 0)
     {
@@ -110,8 +120,18 @@ void OnTick()
     // Get the current candle index
     int current_candle = iBars(_Symbol, _Period) - 1;
 
-    // Check if there's an open position on the current symbol
-    bool has_open_trade = PositionSelect(_Symbol);
+    // Check if there's an open position on the current symbol with our magic number
+    bool has_open_trade = false;
+    for(int pos = PositionsTotal() - 1; pos >= 0; pos--)
+    {
+        ulong pos_ticket = PositionGetTicket(pos);
+        if(pos_ticket > 0 && PositionGetString(POSITION_SYMBOL) == _Symbol &&
+           PositionGetInteger(POSITION_MAGIC) == magic_number)
+        {
+            has_open_trade = true;
+            break;
+        }
+    }
 
     // Display comments on the chart
     string comment_text = StringFormat("Upper BB: %.5f\nMiddle BB: %.5f\nLower BB: %.5f\nEMA: %.5f\nHas Open Trade: %s\nLast Trade Candle: %d",
@@ -119,8 +139,38 @@ void OnTick()
                                         has_open_trade ? "Yes" : "No", last_trade_candle);
     Comment(comment_text);
 
+    // Check for pending re-entry state machine
+    if(!has_open_trade && pending_reentry)
+    {
+        static int last_reentry_candle = -1;
+        if(current_candle != last_reentry_candle)
+        {
+            last_reentry_candle = current_candle;
+            pending_candles_remaining--;
+            double close_prev = iClose(_Symbol, _Period, 1);
+
+            bool reentry_condition = false;
+            if(pending_is_buy)
+                reentry_condition = (close_prev > pending_bb_lower && close_prev < pending_bb_middle);
+            else
+                reentry_condition = (close_prev < pending_bb_upper && close_prev > pending_bb_middle);
+
+            if(reentry_condition)
+            {
+                OpenTrade(pending_is_buy, pending_bb_upper, pending_bb_middle, pending_bb_lower);
+                last_trade_candle = current_candle;
+                pending_reentry = false;
+            }
+            else if(pending_candles_remaining <= 0)
+            {
+                Print("Pending re-entry expired without meeting conditions");
+                pending_reentry = false;
+            }
+        }
+    }
+
     // If there's no open trade, check for new entry opportunities based on the latest candles
-    if(!has_open_trade && (current_candle - last_trade_candle) > 2)
+    if(!has_open_trade && !pending_reentry && (current_candle - last_trade_candle) > 2)
     {
         // --- Buy Signal Conditions ---
         double close_i4 = iClose(_Symbol, _Period, 4); // Close of candle [i-4]
@@ -193,10 +243,20 @@ void OnTick()
         {
             last_checked_candle = current_candle;
 
-            // Manage risk for the open trade
-            double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
-            bool is_buy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-            ManageRisk(is_buy, entry_price, current_bb_upper, current_bb_middle, current_bb_lower);
+            // Re-select the position with our magic number
+            for(int pos = PositionsTotal() - 1; pos >= 0; pos--)
+            {
+                ulong pos_ticket = PositionGetTicket(pos);
+                if(pos_ticket > 0 && PositionGetString(POSITION_SYMBOL) == _Symbol &&
+                   PositionGetInteger(POSITION_MAGIC) == magic_number)
+                {
+                    // Manage risk for the open trade
+                    double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
+                    bool is_buy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+                    ManageRisk(is_buy, entry_price, current_bb_upper, current_bb_middle, current_bb_lower);
+                    break;
+                }
+            }
         }
     }
 }
@@ -272,27 +332,14 @@ bool CheckForBearishPattern(string symbol, ENUM_TIMEFRAMES timeframe)
 //+------------------------------------------------------------------+
 void WaitForReEntry(bool is_buy, double current_bb_upper, double current_bb_middle, double current_bb_lower)
 {
-   for(int i = 1; i <= 2; i++)
-   {
-      double close_next = iClose(_Symbol, _Period, i);
-      
-      if(is_buy)
-      {
-         if(close_next > current_bb_lower && close_next < current_bb_middle)
-         {
-            OpenTrade(true, current_bb_upper, current_bb_middle, current_bb_lower);
-            return; // Exit loop after trade execution
-         }
-      }
-      else
-      {
-         if(close_next < current_bb_upper && close_next > current_bb_middle)
-         {
-            OpenTrade(false, current_bb_upper, current_bb_middle, current_bb_lower);
-            return; // Exit loop after trade execution
-         }
-      }
-   }
+   // Set pending re-entry state; actual re-entry check happens in OnTick on future candles
+   pending_reentry = true;
+   pending_is_buy = is_buy;
+   pending_candles_remaining = 2;
+   pending_bb_upper = current_bb_upper;
+   pending_bb_middle = current_bb_middle;
+   pending_bb_lower = current_bb_lower;
+   Print("Pending re-entry set: is_buy=", is_buy, ", waiting up to 2 candles");
 }
 
 //+------------------------------------------------------------------+
@@ -300,17 +347,36 @@ void WaitForReEntry(bool is_buy, double current_bb_upper, double current_bb_midd
 //+------------------------------------------------------------------+
 double CalculateLotSize(double stop_loss_distance, bool is_buy)
 {
+    // Guard: invalid stop loss distance
+    if(stop_loss_distance <= 0)
+    {
+        Print("Warning: stop_loss_distance <= 0, returning min_lot_size");
+        return min_lot_size;
+    }
+
+    // Guard: invalid tick size
+    double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    if(tick_size == 0)
+    {
+        Print("Warning: SYMBOL_TRADE_TICK_SIZE == 0, returning min_lot_size");
+        return min_lot_size;
+    }
+
     // Get the current price depending on the trade direction
     double price = is_buy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
     // Calculate the pip value per lot for the symbol
-    double pip_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE) / SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    double pip_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE) / tick_size;
 
     // Calculate the lot size based on risk percentage and stop loss distance
     double lot_size = (risk_perc / 100.0) * AccountInfoDouble(ACCOUNT_EQUITY) / (stop_loss_distance * pip_value);
 
     // Ensure that lot size is within the valid range for the symbol
     lot_size = MathMax(lot_size, min_lot_size);
+
+    // Clamp to maximum allowed volume
+    double max_lot_size = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    lot_size = MathMin(lot_size, max_lot_size);
 
     // Adjust the lot size according to the broker's volume step
     double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
@@ -336,9 +402,17 @@ void OpenTrade(bool is_buy, double current_bb_upper, double current_bb_middle, d
 
     double take_profit = is_buy ? current_bb_upper : current_bb_lower;
 
-    // Ensure absolute values for stop loss and take profit
-    stop_loss = MathAbs(stop_loss);
-    take_profit = MathAbs(take_profit);
+    // Validate stop loss and take profit
+    if(stop_loss <= 0)
+    {
+        Print("Error: Invalid stop loss value (", stop_loss, "). Trade aborted.");
+        return;
+    }
+    if(take_profit <= 0)
+    {
+        Print("Error: Invalid take profit value (", take_profit, "). Trade aborted.");
+        return;
+    }
 
     // Ensure precision is maintained for SL and TP
     stop_loss = NormalizeDouble(stop_loss, _Digits);
@@ -456,7 +530,7 @@ void ManageRisk(bool is_buy, double entry_price, double current_bb_upper, double
     // Retrieve the current position details
     double current_tp = PositionGetDouble(POSITION_TP);
     double current_sl = PositionGetDouble(POSITION_SL);
-    ulong ticket = PositionGetTicket(0);
+    ulong ticket = (ulong)PositionGetInteger(POSITION_TICKET);
 
     // Adjust the trailing stop dynamically based on close price
     double new_sl = current_sl;

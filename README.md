@@ -1,195 +1,125 @@
-### mql5_ea: **Forex Trading Automation EA & Backtest**
+# mql5_ea
 
----
+MetaTrader 5 Expert Advisors and research files for a Bollinger Band mean-reversion day-trading strategy with EMA, RSI, ATR, and broker-side risk management.
 
-### Repository Overview
-This repository contains multiple components designed for automating and backtesting Forex trading strategies. It features Expert Advisors (EAs) for MetaTrader 5 (MT5) and a Jupyter notebook for backtesting. The repository encourages community contributions but also provides a word of caution regarding overdevelopment with a sample EA that went beyond practical optimization.
+## Current Status
 
----
+The recommended EA in this repository is `DayTradingEA_v2.mq5`.
 
-### Files Included:
-1. **TestEA.mq5**: A well-balanced Expert Advisor (EA) that trades based on technical indicators and offers flexible risk management.
-2. **Bot_v_1_03.ipynb**: A Jupyter notebook that performs backtesting and analysis of the EA strategy, allowing users to evaluate its effectiveness on historical data.
-3. **Black_Box.mq5**: A cautionary example of an EA that was over-developed, demonstrating the dangers of excessive optimization and complex logic. It highlights potential pitfalls that developers should avoid when creating trading algorithms.
+Repository roles:
 
----
+- `DayTradingEA_v2.mq5`: primary implementation and current recommended EA
+- `TestEA.mq5`: earlier simplified implementation kept for reference
+- `Black_Box.mq5`: experimental / cautionary implementation kept for comparison
+- `Bot v_1_03.ipynb`: exploratory backtest notebook
+- `audit.md`: verified engineering audit of the earlier codebase
+- `CHANGELOG.md`: change history for the repository
 
-### Key Features
-- **TestEA.mq5**:
-  - **Technical Indicators**: Utilizes Bollinger Bands, Exponential Moving Averages (EMA), Relative Strength Index (RSI), and Average True Range (ATR) to generate trade signals.
-  - **Risk Management**: Implements adjustable stop-loss and take-profit levels based on volatility and Fibonacci levels for maximizing profit while minimizing risk.
-  - **Dynamic Lot Size**: The EA calculates the appropriate lot size based on account equity and stop-loss distance, ensuring proper risk management on every trade.
-  - **Re-entry Logic**: Trades are only executed after price re-enters a favorable range within the Bollinger Bands, helping to avoid premature entries.
+`TestEA.mq5` and `Black_Box.mq5` should not be treated as the preferred production candidate while `DayTradingEA_v2.mq5` exists.
 
-- **Bot_v_1_03.ipynb**:
-  - **Backtesting**: Connects to MT5 to pull historical data and applies the same strategy as `TestEA.mq5`, allowing for in-depth performance evaluation before live trading.
-  - **Signal Generation**: Performs technical analysis using Bollinger Bands, EMA, RSI, and ATR, generating buy/sell signals that can be visually inspected.
-  - **Performance Metrics**: Displays trade statistics including win rate, total trades, and total profit/loss.
-  - **Visualizations**: Creates plots to visualize trading signals, equity curves, and technical indicators, helping traders understand how the strategy performs over time.
+## Strategy Summary
 
-- **Black_Box.mq5** (Cautionary Example):
-  - **Over-Development Pitfalls**: Demonstrates how excessive complexity and frequent retry mechanisms can reduce trading efficiency and lead to poor execution.
-  - **Advanced Signal Detection**: Includes complex candlestick pattern detection (e.g., hammer, engulfing, and morning star patterns), re-entry logic, and risk management that sometimes lead to decision delays.
-  - **Warning**: While comprehensive in features, this EA is an example of how trading logic can become inefficient and counterproductive when overly optimized. This script should serve as a learning tool to avoid adding unnecessary complexity.
+The core strategy is a short-term mean-reversion model intended for `M5` and `M15` charts.
 
----
+Entry logic in the v2 EA:
 
-### Getting Started
+- price extends outside Bollinger Bands
+- recent candles confirm short-term exhaustion
+- EMA provides directional context
+- RSI acts as a momentum filter
+- candlestick confirmation is required
+- trade is entered either immediately on valid re-entry or after a limited re-entry wait state
 
-#### 1. **MetaTrader 5 Expert Advisor Setup**:
-   - Download either `TestEA.mq5` or `Black_Box.mq5`.
-   - Place the files into your `MQL5/Experts/` directory in MetaTrader 5.
-   - Open the MetaEditor, compile the EA, and attach it to a trading chart within MT5.
+Risk management in the v2 EA:
 
-#### 2. **Backtesting Setup in Jupyter Notebook**:
-   - Download `Bot_v_1_03.ipynb`.
-   - Install the necessary Python libraries by running the following commands:
-     ```bash
-     pip install MetaTrader5 pandas_ta backtesting seaborn matplotlib plotly
-     ```
-   - Open the notebook and configure your MT5 login credentials. Run the cells to start backtesting the strategy using historical data.
+- ATR-based initial stop loss
+- take profit at the opposing Bollinger Band
+- broker-side trailing via break-even, EMA, and Fibonacci progression
+- dynamic lot sizing based on equity and stop distance
+- spread filter
+- trading-session filter
+- daily and total drawdown circuit breakers
+- magic number isolation
 
----
+## Recommended File
 
-### Technical Indicators Used:
-- **Bollinger Bands**: Identifies price volatility and generates signals based on price re-entry into the bands.
-- **Exponential Moving Averages (EMA)**: Helps identify market trends and determines entry/exit points.
-- **Relative Strength Index (RSI)**: Measures momentum and indicates overbought/oversold conditions.
-- **Average True Range (ATR)**: Used for calculating volatility and determining stop-loss levels.
+Use `DayTradingEA_v2.mq5` if you want the cleanest current implementation.
 
----
+Reasons:
 
-### How It Works
-#### **TestEA.mq5**:
-- **Signal Generation**: Generates buy or sell signals based on the interaction between price and technical indicators like Bollinger Bands and EMA.
-- **Re-entry Logic**: The EA ensures that trades are only taken when the price re-enters a favorable range within the Bollinger Bands.
-- **Dynamic Stop-Loss & Take-Profit**: The EA adjusts stop-loss and take-profit levels dynamically based on the Fibonacci retracement levels between the EMA and Bollinger Bands.
+- broker-synced position handling
+- closed-candle signal evaluation
+- explicit re-entry state machine
+- spread/session/drawdown safety controls
+- clearer separation between signal generation, execution, and trade management
 
-#### **Black_Box.mq5** (Cautionary Example):
-- **Complex Signal Logic**: This EA goes beyond standard signal detection and includes candlestick pattern recognition. It highlights how over-complication can lead to inefficiencies.
-- **Error Handling & Retry Logic**: The EA aggressively retries failed trades, which can sometimes cause excessive drawdown or missed opportunities.
+## Important Constraints
 
----
+- One chart per symbol/timeframe. The EA is not a one-chart multi-symbol engine.
+- Session inputs are interpreted from broker server time.
+- The notebook is research tooling, not proof of live profitability.
+- No file in this repository guarantees profits, low drawdown, or stable win rate across brokers or symbols without fresh testing.
 
-### Cautionary Note: **Over-Development Pitfalls**
-The `Black_Box.mq5` file serves as an educational tool to demonstrate the risks of over-developing an EA. While it includes advanced features such as candlestick pattern detection, intricate re-entry logic, and aggressive risk management, the complexity may hinder performance. Developers should aim for simplicity and focus on core trading logic to maintain efficiency and reduce unnecessary trade execution errors.
+## Setup
 
----
+### MetaTrader 5
 
-### Example Usage
-- **Live Trading**: Use `TestEA.mq5` for live or demo accounts to automate trades based on tested signals.
-- **Backtesting**: Before going live, run backtests in `Bot_v_1_03.ipynb` to evaluate strategy performance on historical data.
-- **Education**: Learn from the overdevelopment in `Black_Box.mq5` by analyzing how complexity can impact trading outcomes and understanding how to avoid these issues in your own development.
+1. Place `DayTradingEA_v2.mq5` in your MT5 `MQL5/Experts/` folder.
+2. Open MetaEditor and compile the file.
+3. Attach the EA to one chart per symbol/timeframe you want to trade.
+4. Enable Algo Trading in MT5.
+5. Start on a demo account before considering any live deployment.
 
----
+### Notebook
 
-### Prerequisites
-- **MetaTrader 5**: Download and install for live/demonstration trading.
-- **Python 3.7+**: Required to run the backtesting notebook.
-- **Required Python Libraries**:
-  ```bash
-  pip install MetaTrader5 pandas_ta backtesting seaborn matplotlib plotly
-  ```
+`Bot v_1_03.ipynb` is available for exploratory analysis and backtesting.
 
----
+Python packages typically used by the notebook:
 
-### What was the goal when I started ?
+```bash
+pip install MetaTrader5 pandas_ta backtesting seaborn matplotlib plotly
+```
 
-Expert Advisor (EA) will implement a day trading strategy on the MetaTrader 5 (MT5) platform, focusing on Forex pairs and commodities (gold, silver, oil). The strategy is based on Bollinger Bands, EMA, candlestick pattern confirmations, and dynamic risk management. The EA is designed to operate on 5-minute (5M) and 15-minute (15M) timeframes and aims to achieve a minimum annual profit of 60%.
+## Key Inputs In `DayTradingEA_v2.mq5`
 
-#### **Core Functionality**
+- `inp_risk_perc`: equity risk per trade
+- `inp_max_spread`: maximum spread allowed for new entries
+- `inp_session_start` / `inp_session_end`: trading session window in server time
+- `inp_max_daily_dd`: daily drawdown stop level
+- `inp_max_total_dd`: total drawdown stop level from peak equity
+- `inp_reentry_limit`: candles allowed for delayed re-entry
+- `inp_rsi_buy_max` / `inp_rsi_sell_min`: RSI filters for buys and sells
 
-1. **Trading Conditions and Strategy**
+## Validation Workflow
 
-   - **Market Instruments**: Forex pairs and commodities (gold, silver, oil).
-   - **Timeframes**: 5M and 15M.
+Before live use, validate the EA in this order:
 
-   ##### **Entry Conditions**
+1. Compile cleanly in MetaEditor.
+2. Run MT5 backtests with realistic spread assumptions.
+3. Include commission and slippage in the evaluation.
+4. Test on multiple symbols and market regimes.
+5. Do out-of-sample and walk-forward validation.
+6. Forward-test on demo for multiple weeks.
 
-   **Buy Signal**:
-   1. **Bollinger Band Condition**:
-      - The previous candle ([i-1]) must have:
-        - Closed below the lower Bollinger Band (BB Lower), or
-        - The lowest price (low) of the candle must have been below the BB Lower.
-   2. **EMA Condition**:
-      - The closing prices of the two candles before the previous one ([i-3] and [i-2]) must have been below the 20-period EMA.
-   3. **Price Trend Condition**:
-      - The closing prices over the last three candles ([i-3], [i-2], and [i-1]) must show a decreasing trend:
-        - Close of [i-3] > Close of [i-2] > Close of [i-1].
-   4. **Candlestick Pattern Confirmation**:
-      - The confirmation candle ([i]) must form one of the following patterns: Pin Bar, Hammer, Hanging Man, Morning Star, Evening Star, or an Engulfing candle.
-      - If the confirmation candle forms any of these patterns but does not close inside the Bollinger Band middle and lower band range, the EA will wait. If the next candle ([i+1]) or the candle after that ([i+2]) closes inside the Bollinger Band range, a trade must immediately be executed at the current price.
-      - **OR**: If the confirmation candle ([i]) forms an Engulfing candle and closes inside the Bollinger Band middle and lower band range, the EA must immediately execute a trade at the current price.
-   5. **Re-entry Condition** (Final Validation):
-      - The EA must wait for the price to re-enter the Bollinger Band range before executing a trade. If the price does not re-enter within the next two candles, the EA should not enter the trade and should look for a new opportunity.
+Metrics to watch:
 
-   **Sell Signal**:
-   1. **Bollinger Band Condition**:
-      - The previous candle ([i-1]) must have:
-        - Closed above the upper Bollinger Band (BB Upper), or
-        - The highest price (high) of the candle must have been above the BB Upper.
-   2. **EMA Condition**:
-      - The closing prices of the two candles before the previous one ([i-3] and [i-2]) must have been above the 20-period EMA.
-   3. **Price Trend Condition**:
-      - The closing prices over the last three candles ([i-3], [i-2], and [i-1]) must show an increasing trend:
-        - Close of [i-3] < Close of [i-2] < Close of [i-1].
-   4. **Candlestick Pattern Confirmation**:
-      - The confirmation candle ([i]) must form one of the following patterns: Pin Bar, Hammer, Hanging Man, Morning Star, Evening Star, or an Engulfing candle.
-      - If the confirmation candle forms any of these patterns but does not close inside the Bollinger Band middle and upper band range, the EA will wait. If the next candle ([i+1]) or the candle after that ([i+2]) closes inside the Bollinger Band range, a trade must immediately be executed at the current price.
-      - **OR**: If the confirmation candle ([i]) forms an Engulfing candle and closes inside the Bollinger Band middle and upper band range, the EA must immediately execute a trade at the current price.
-   5. **Re-entry Condition** (Final Validation):
-      - The EA must wait for the price to re-enter the Bollinger Band range before executing a trade. If the price does not re-enter within the next two candles, the EA should not enter the trade and should look for a new opportunity.
+- net expectancy after costs
+- profit factor
+- maximum drawdown
+- trade frequency
+- average winner vs average loser
+- stability across symbols and date ranges
 
-2. **Risk Management**
+## Documentation Map
 
-   - **Dynamic Lot Sizing**:
-     - The lot size will be calculated dynamically using the following formula:
-       
-python
-       #------ Lot sizing considering risk --------------------------
-       pip_value = (1e-4 / self.data.Close[-1]) * 1e5
-       size = int(self.risk_perc * self.equity / (slatr * pip_value))
+- `audit.md`: baseline audit findings and architectural concerns discovered during review
+- `CHANGELOG.md`: repository-level change history
+- `DayTradingEA_v2.mq5`: current primary EA source
 
-     - **Risk Per Trade**: Maximum of 5% of account equity.
-     - **Minimum Lot Size**: 0.01 lots.
+## Development Notes
 
-   - **Dynamic Stop Loss (SL)**:
-     - Set at the current price ± 2 * ATR value.
+The repository still keeps older implementations because they are useful as reference material, but they should not be confused with the recommended path forward. If you extend the strategy further, use `DayTradingEA_v2.mq5` as the base and treat each new filter or optimization as a testable hypothesis rather than an assumed improvement.
 
-   - **Take Profit (TP)**:
-     - Initially set at the opposing upper/lower Bollinger Band level.
-     - The EA should manage the trade internally by adjusting the trailing stop based on Fibonacci retracement levels (23.6%, 38.2%, 50%, 61.8%) as the price moves favourably.
-     - The TP should be updated to the latest value of the opposing Bollinger Band if it is more profitable than the previous level.
+## Risk Notice
 
-3. **Price Monitoring**
-
-   - The EA should closely monitor live price action, including both bid and ask prices, which are essential for accurate trade execution and management.
-   - The EA must track these prices to determine the best entry and exit points and to ensure the internal risk management strategy is effectively implemented.
-   - **Price Action Monitoring**:
-     - The EA should focus on closed candles and continuously monitor live prices to make real-time adjustments to trades (the Notebook focusses on Closed candles only).
-
-#### **Technical Requirements**
-
-- **Platform**: MetaTrader 5 (MT5)
-- **Language**: MQL5
-- **Deliverables**:
-  - Full source code (.mq5)
-  - User guide and documentation explaining setup, parameters, and strategy logic.
-
-#### **Additional Notes**
-
-- The EA must be designed to handle multiple currency pairs and commodities (gold, silver, oil) simultaneously.
-- The internal logic should be modular, allowing for easy updates or adjustments to the strategy.
-
----
-
-### Contributing
-Contributions are welcome. Feel free to submit issues, offer suggestions, or contribute to the codebase. When making changes, remember to keep the trading logic simple and efficient. Avoid adding unnecessary complexity that can degrade performance or introduce bugs.
-
----
-
-### Sources and credit 
-
-Lot sizing considering risk  - https://www.youtube.com/@CodeTradingCafe (No affiliation but the videos helped in creating the code)
-MQL EA coding                - https://www.youtube.com/c/Ren%C3%A9Balke (No affiliation but the videos helped in creating the code)
-
+Trading leveraged products is risky. This repository is software and research material, not a promise of returns or a guarantee of suitability for any account.
